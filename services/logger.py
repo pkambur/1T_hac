@@ -18,5 +18,6 @@ def set_logger_config(log_level="INFO"):
         level=level,
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename=LOG_DIR + filename
+        filename=str(Path(LOG_DIR) / filename),  # Обеспечиваем корректное объединение пути
+        filemode="w"  # Перезаписываем файл при каждом запуске
     )
