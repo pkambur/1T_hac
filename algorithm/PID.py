@@ -1,13 +1,9 @@
 import json
 import time
-import logging
 
-# Настройка логирования
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
-
-# Уменьшенные коэффициенты для стабильности
-z_kp, z_ki, z_kd = 15.0, 3.0, 4.0  # уменьшен kp, увеличен kd
-hor_kp, hor_ki, hor_kd = 0.3, 0.0, 0.04  # слегка увеличен kd
+# hor_kp, hor_ki, hor_kd = 0.3, 0.5, 0.08
+z_kp, z_ki, z_kd = 20.0, 5.0, 3.0
+hor_kp, hor_ki, hor_kd = 0.4, 0.0, 0.03
 
 parametrs = {}
 
@@ -20,35 +16,33 @@ def constrain(x, a, b):
 
 def computePID_X(input, setpoint, kp, ki, kd, dt, minOut, maxOut, id):
     global parametrs
+
     err_x = setpoint - input
     integral_x = constrain(parametrs[id]["integral"]["x"] + err_x * dt * ki, minOut, maxOut)
     D = (err_x - parametrs[id]["prevErr"]["x"]) / dt
     parametrs[id]["prevErr"]["x"] = err_x
-    output = constrain(err_x * kp + integral_x + D * kd, minOut, maxOut)
-    logging.debug(f"PID_X id={id}: err={err_x}, integral={integral_x}, D={D}, output={output}")
-    return output
+    return constrain(err_x * kp + integral_x + D * kd, minOut, maxOut)
 
 def computePID_Y(input, setpoint, kp, ki, kd, dt, minOut, maxOut, id):
     global parametrs
+
     err_y = setpoint - input
     integral_y = constrain(parametrs[id]["integral"]["y"] + err_y * dt * ki, minOut, maxOut)
     D = (err_y - parametrs[id]["prevErr"]["y"]) / dt
     parametrs[id]["prevErr"]["y"] = err_y
-    output = constrain(err_y * kp + integral_y + D * kd, minOut, maxOut)
-    logging.debug(f"PID_Y id={id}: err={err_y}, integral={integral_y}, D={D}, output={output}")
-    return output
+    return constrain(err_y * kp + integral_y + D * kd, minOut, maxOut)
 
 def computePID_Z(input, setpoint, kp, ki, kd, dt, minOut, maxOut, id):
     global parametrs
+
     err_z = setpoint - input
     integral_z = constrain(parametrs[id]["integral"]["z"] + err_z * dt * ki, minOut, maxOut)
     D = (err_z - parametrs[id]["prevErr"]["z"]) / dt
     parametrs[id]["prevErr"]["z"] = err_z
-    output = constrain(err_z * kp + integral_z + D * kd, minOut, maxOut)
-    logging.debug(f"PID_Z id={id}: err={err_z}, integral={integral_z}, D={D}, output={output}")
-    return output
+    return constrain(err_z * kp + integral_z + D * kd, minOut, maxOut)
 
 def get_clock(timer):
+    """Возвращает время в секундах"""
     return time.time() - timer
 
 def calculate_engine(data):
@@ -59,11 +53,7 @@ def calculate_engine(data):
 
     xSpeed = computePID_X(axis_x, target_axis_x, hor_kp, hor_ki, hor_kd, 0.1, -15, 15, data["id"])
     ySpeed = computePID_Y(axis_y, target_axis_y, hor_kp, hor_ki, hor_kd, 0.1, -15, 15, data["id"])
-    speed = computePID_Z(current_z, target_z, z_kp, z_ki, z_kd, 0.1, -20, 60, data["id"])  # разрешены отрицательные значения
-
-    # Минимальная тяга для подъема
-    base_thrust = 30.0 if current_z < target_z else 20.0
-    speed = max(speed, base_thrust)
+    speed = computePID_Z(current_z, target_z, z_kp, z_ki, z_kd, 0.1, 0, 60, data["id"])
 
     motorSpeed[0] = speed + xSpeed
     motorSpeed[1] = speed + xSpeed
@@ -74,15 +64,13 @@ def calculate_engine(data):
     motorSpeed[6] = speed - ySpeed
     motorSpeed[7] = speed - ySpeed
 
-    for i in range(len(motorSpeed)):
-        motorSpeed[i] = constrain(motorSpeed[i], 0, 60)
-
-    logging.debug(f"Drone {data['id']} motors: {motorSpeed}")
     return motorSpeed
+
 
 def get_data(str_data: str):
     data = json.loads(str_data)["dronesData"]
     return data
+
 
 def concat_engines(engines, t):
     result = {
@@ -90,6 +78,7 @@ def concat_engines(engines, t):
         "returnTimer": 1000*t,
     }
     return json.dumps(result)
+
 
 def concat_engine(engines, data, drop=False):
     result = {
@@ -108,19 +97,30 @@ def concat_engine(engines, data, drop=False):
     }
     return result
 
+
 def axis_move(target_data, drop=False):
     engines = calculate_engine(target_data)
     return concat_engine(engines, target_data, drop)
 
+
 def init_params(id):
     global parametrs
+
     if id not in parametrs:
         parametrs[id] = {}
         parametrs[id]["prevErr"] = {"x": 0, "y": 0, "z": 0}
         parametrs[id]["integral"] = {"x": 0, "y": 0, "z": 0}
 
+
 def move(type, data, angle, height, drop=False):
+    """
+    type - один из 4 вариантов: r - вправо, l - влево, f - вперед, b - назад
+    str_data - данные о дроне
+    angle - угол наклона в соответствующее направление. положительная величина
+    height - высота, на которой летит дрон
+    """
     init_params(data["id"])
+
     target_data = {}
     target_axis = {}
     target_data["id"] = data["id"]
@@ -141,4 +141,4 @@ def move(type, data, angle, height, drop=False):
     return axis_move(target_data, drop)
 
 def equal(a, b):
-    return abs(a - b) < 0.5
+    return abs(a - b) < 1
