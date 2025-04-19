@@ -1,0 +1,3 @@
+2025-04-20 00:43:27 INFO [root] Logger configured: file=logs\app.log, level=DEBUG
+2025-04-20 00:43:27 DEBUG [fly] Fly module logger initialized
+2025-04-20 00:43:27 DEBUG [main] Starting websocket connection
