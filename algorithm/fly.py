@@ -1,338 +1,632 @@
-import logging
+# import time
+# import math
+# from connection.SocketConnection import SocketConnection  # Добавлен импорт
+# from algorithm.PID import move, get_data, concat_engines
+#
+# connection = SocketConnection()
+# H = 8  # высота, на которой летит дрон
+# T = 0.1  # время, через которое симулятор пришлет новый пакет данных
+# ANGLE = 5  # стандартный угол наклона дрона
+# PRECISION_ANGLE = 0.5  # угол для точной корректировки
+# ITER = [0, 200, 400, 600, 800]  # задержка для следующих дронов
+# LIDAR_THRESHOLD = 0.5  # порог для близких препятствий
+# SAFE_LIDAR_THRESHOLD = 1.5  # порог для безопасных направлений
+# PRECISION_THRESHOLD = 3.0  # порог расстояния для точной корректировки
+# BYPASS_STEPS = 7  # максимальное количество шагов в обходе
+# DANGER_COUNT_THRESHOLD = 2  # порог для сброса маршрута при риске
+# DANGER_LIDAR_THRESHOLD = 0.7  # порог для опасных лидаров
+#
+# # Теги: None, "x<dir>", "z<dir>", "bypass", "precision", "return"
+# TAG = [None for _ in range(5)]
+#
+# # Равняем ли координату X?
+# IS_X = [True for _ in range(5)]
+#
+# # Список для хранения маршрутов каждого дрона
+# PATHS = [[] for _ in range(5)]
+#
+# # Статус активации дронов
+# IS_ACTIVE = [False for _ in range(5)]
+#
+# # Флаг для отслеживания сброса огнетушителя
+# DROPPED = [False for _ in range(5)]
+#
+# # Статус возвращения
+# IS_RETURNING = [False for _ in range(5)]
+#
+# # Индексы для возвращения по маршруту
+# RETURN_INDICES = [0 for _ in range(5)]
+#
+# # Состояние обхода: {направление, шаги, исходное направление}
+# BYPASS_STATE = [{} for _ in range(5)]  # Например, {"direction": "r", "steps": 7, "original": "f"}
+#
+# # Счетчик опасных шагов
+# DANGER_COUNT = [0 for _ in range(5)]
+#
+# # Состояние точной корректировки: {оставшиеся шаги, этап}
+# PRECISION_STATE = [{} for _ in range(5)]  # Например, {"steps": 30, "stage": "x"}
+#
+# def equal(a, b):
+#     """Проверяет равенство с допуском 0.2 для высокой точности"""
+#     return abs(a - b) < 0.2
+#
+# def calculate_distance(drone_position, target_position):
+#     """Вычисляет евклидово расстояние до цели"""
+#     dx = drone_position["x"] - target_position["x"]
+#     dz = drone_position["z"] - target_position["z"]
+#     return math.sqrt(dx**2 + dz**2)
+#
+# def get_perpendicular_directions(direction):
+#     """Возвращает перпендикулярные направления"""
+#     if direction == 'f':
+#         return ['r', 'l']
+#     if direction == 'b':
+#         return ['r', 'l']
+#     if direction == 'r':
+#         return ['f', 'b']
+#     if direction == 'l':
+#         return ['f', 'b']
+#     return []
+#
+# def reverse_direction(direction):
+#     """Возвращает противоположное направление"""
+#     if direction == 'f':
+#         return 'b'
+#     if direction == 'b':
+#         return 'f'
+#     if direction == 'r':
+#         return 'l'
+#     if direction == 'l':
+#         return 'r'
+#     return 'f'
+#
+# def check_lidars(lidars, desired_direction, drone_index):
+#     """Проверяет лидары для всех направлений, возвращает безопасные и флаг необходимости обхода"""
+#     safe_directions = []
+#     needs_bypass = False
+#     print(f"Drone {drone_index}: Checking lidars, desired={desired_direction}, values={lidars}")
+#
+#     for direction in ['f', 'b', 'r', 'l']:
+#         value = lidars.get(direction, float('inf'))
+#         if value == -1 or value >= SAFE_LIDAR_THRESHOLD:
+#             safe_directions.append(direction)
+#         if 0 < value < LIDAR_THRESHOLD:
+#             print(f"Drone {drone_index}: Direction {direction} blocked (lidar={value:.2f})")
+#             needs_bypass = True
+#
+#     return safe_directions, needs_bypass
+#
+# def avoid_obstacle(lidars, current_direction, drone_position, target_position, drone_index):
+#     """Выбирает направление для обхода препятствия"""
+#     safe_directions, _ = check_lidars(lidars, current_direction, drone_index)
+#     perpendicular = get_perpendicular_directions(current_direction)
+#
+#     # Приоритет перпендикулярным направлениям с лидаром > SAFE_LIDAR_THRESHOLD
+#     for direction in perpendicular:
+#         if direction in safe_directions:
+#             print(f"Drone {drone_index}: Bypassing, chose {direction}, lidars={lidars}")
+#             BYPASS_STATE[drone_index] = {
+#                 "direction": direction,
+#                 "steps": BYPASS_STEPS,
+#                 "original": current_direction
+#             }
+#             return direction
+#
+#     # Пробуем любое безопасное направление
+#     if safe_directions:
+#         chosen_direction = safe_directions[0]
+#         print(f"Drone {drone_index}: Bypassing, chose {chosen_direction} (fallback), lidars={lidars}")
+#         BYPASS_STATE[drone_index] = {
+#             "direction": chosen_direction,
+#             "steps": BYPASS_STEPS,
+#             "original": current_direction
+#         }
+#         return chosen_direction
+#
+#     # Если нет безопасных направлений, отскок назад
+#     reverse_dir = reverse_direction(current_direction)
+#     print(f"Drone {drone_index}: No safe directions, attempting backoff to {reverse_dir}, lidars={lidars}")
+#     BYPASS_STATE[drone_index] = {
+#         "direction": reverse_dir,
+#         "steps": 3,  # Увеличенный отскок
+#         "original": current_direction
+#     }
+#     return reverse_dir
+#
+# def precision_align(drone_position, target_position, lidars, drone_index):
+#     """Точно корректирует позицию дрона по x, затем z"""
+#     dx = target_position["x"] - drone_position["x"]
+#     dz = target_position["z"] - drone_position["z"]
+#     stage = PRECISION_STATE[drone_index].get("stage", "x")
+#     safe_directions, needs_bypass = check_lidars(lidars, "f", drone_index)
+#
+#     print(f"Drone {drone_index}: Precision aligning, stage={stage}, dx={dx:.3f}, dz={dz:.3f}, lidars={lidars}")
+#
+#     if needs_bypass:
+#         direction = avoid_obstacle(lidars, "f", drone_position, target_position, drone_index)
+#         return direction, ANGLE
+#
+#     # Этап 1: выравнивание по x
+#     if stage == "x" and abs(dx) > 0.05:
+#         desired_direction = "r" if dx > 0 else "l"
+#         if desired_direction in safe_directions:
+#             print(f"Drone {drone_index}: Aligning x, moving {desired_direction}, dx={dx:.3f}")
+#             return desired_direction, PRECISION_ANGLE
+#         perpendicular = get_perpendicular_directions(desired_direction)
+#         for alt_dir in perpendicular:
+#             if alt_dir in safe_directions:
+#                 print(f"Drone {drone_index}: Aligning x, moving {alt_dir} (alt), dx={dx:.3f}")
+#                 return alt_dir, PRECISION_ANGLE
+#         return "f", 0
+#     # Переход к этапу z
+#     elif stage == "x" and abs(dx) <= 0.05:
+#         PRECISION_STATE[drone_index]["stage"] = "z"
+#         print(f"Drone {drone_index}: X aligned, switching to z, dx={dx:.3f}, dz={dz:.3f}")
+#
+#     # Этап 2: выравнивание по z
+#     if stage == "z" and abs(dz) > 0.05:
+#         desired_direction = "f" if dz < 0 else "b"
+#         if desired_direction in safe_directions:
+#             print(f"Drone {drone_index}: Aligning z, moving {desired_direction}, dz={dz:.3f}")
+#             return desired_direction, PRECISION_ANGLE
+#         perpendicular = get_perpendicular_directions(desired_direction)
+#         for alt_dir in perpendicular:
+#             if alt_dir in safe_directions:
+#                 print(f"Drone {drone_index}: Aligning z, moving {alt_dir} (alt), dz={dz:.3f}")
+#                 return alt_dir, PRECISION_ANGLE
+#         return "f", 0
+#     elif stage == "z" and abs(dz) <= 0.05:
+#         print(f"Drone {drone_index}: Z aligned, checking target, dx={dx:.3f}, dz={dz:.3f}")
+#         return "f", 0
+#
+#     return "f", 0
+#
+# def return_step(drone, drone_index, lidars):
+#     """Выполняет шаг возвращения по сохраненному маршруту"""
+#     if RETURN_INDICES[drone_index] >= len(PATHS[drone_index]):
+#         return move("f", drone, 0, H)
+#
+#     path_index = len(PATHS[drone_index]) - 1 - RETURN_INDICES[drone_index]
+#     last_direction = PATHS[drone_index][path_index]
+#     return_direction = reverse_direction(last_direction)
+#
+#     safe_directions, needs_bypass = check_lidars(lidars, return_direction, drone_index)
+#     if needs_bypass:
+#         alt_direction = avoid_obstacle(lidars, return_direction, drone["droneVector"], {"x": 0, "z": 0}, drone_index)
+#         PATHS[drone_index].append(alt_direction)
+#         print(f"Drone {drone_index}: Return bypass, moving {alt_direction}, lidars={lidars}")
+#         return move(alt_direction, drone, ANGLE, H)
+#
+#     if return_direction in safe_directions:
+#         RETURN_INDICES[drone_index] += 1
+#         print(f"Drone {drone_index}: Returning, moving {return_direction}, index={RETURN_INDICES[drone_index]}, lidars={lidars}")
+#         return move(return_direction, drone, ANGLE, H)
+#
+#     alt_direction = avoid_obstacle(lidars, return_direction, drone["droneVector"], {"x": 0, "z": 0}, drone_index)
+#     PATHS[drone_index].append(alt_direction)
+#     print(f"Drone {drone_index}: Return bypass, moving {alt_direction}, lidars={lidars}")
+#     return move(alt_direction, drone, ANGLE, H)
+#
+# def next_step(targets, iter):
+#     """Функция анализирует данные с симулятора и делает один шаг"""
+#     global TAG, ITER, IS_X, PATHS, IS_ACTIVE, DROPPED, BYPASS_STATE, DANGER_COUNT, IS_RETURNING, RETURN_INDICES, PRECISION_STATE
+#
+#     data = get_data(connection.receive_data())
+#     fires = [0 for _ in range(len(targets))]
+#     result = []
+#
+#     for i, drone in enumerate(data):
+#         if not IS_ACTIVE[i]:
+#             if iter < ITER[i]:
+#                 result.append(move("f", drone, 0, 0))
+#                 continue
+#             else:
+#                 IS_ACTIVE[i] = True
+#                 result.append(move("f", drone, 0, H))
+#                 continue
+#
+#         current_distance = calculate_distance(drone["droneVector"], targets[i])
+#         dx = drone["droneVector"]["x"] - targets[i]["x"]
+#         dz = drone["droneVector"]["z"] - targets[i]["z"]
+#
+#         # Проверяем, нужно ли активировать точную корректировку
+#         if current_distance < PRECISION_THRESHOLD and not DROPPED[i] and TAG[i] != "precision" and not IS_RETURNING[i]:
+#             print(f"Drone {i}: Near target (dist={current_distance:.2f}), switching to precision")
+#             TAG[i] = "precision"
+#             PRECISION_STATE[i] = {"steps": 30, "stage": "x"}
+#
+#         # Проверяем лидары для всех направлений
+#         safe_directions, needs_bypass = check_lidars(drone["lidarInfo"], "f", i)
+#
+#         # Если требуется обход, немедленно переключаемся в bypass
+#         if needs_bypass and TAG[i] != "bypass" and TAG[i] != "return":
+#             direction = avoid_obstacle(drone["lidarInfo"], "f", drone["droneVector"], targets[i], i)
+#             TAG[i] = "bypass"
+#             angle = ANGLE
+#         else:
+#             # Определяем направление
+#             if TAG[i] is None:
+#                 direction, TAG[i] = get_direction(drone["droneVector"], targets[i], drone["lidarInfo"], i)
+#                 angle = ANGLE
+#             elif "x" in TAG[i]:
+#                 direction, TAG[i] = go_x(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
+#                 angle = ANGLE
+#                 IS_X[i] = False
+#             elif "z" in TAG[i]:
+#                 direction, TAG[i] = go_z(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
+#                 angle = ANGLE
+#             elif TAG[i] == "bypass":
+#                 direction = BYPASS_STATE[i]["direction"]
+#                 angle = ANGLE
+#                 BYPASS_STATE[i]["steps"] -= 1
+#                 original_dir = BYPASS_STATE[i]["original"]
+#                 original_lidar = drone["lidarInfo"].get(original_dir, float('inf'))
+#                 if original_lidar == -1 or original_lidar >= LIDAR_THRESHOLD or BYPASS_STATE[i]["steps"] <= 0:
+#                     print(f"Drone {i}: Bypass completed, original_lidar={original_lidar:.2f}, resetting TAG")
+#                     TAG[i] = None
+#                     PATHS[i] = []  # Перерасчет маршрута
+#                     BYPASS_STATE[i] = {}
+#                 else:
+#                     print(f"Drone {i}: Continuing bypass, direction={direction}, steps={BYPASS_STATE[i]['steps']}, original_lidar={original_lidar:.2f}")
+#             elif TAG[i] == "precision":
+#                 direction, angle = precision_align(drone["droneVector"], targets[i], drone["lidarInfo"], i)
+#                 PRECISION_STATE[i]["steps"] -= 1
+#                 if PRECISION_STATE[i]["steps"] <= 0:
+#                     print(f"Drone {i}: Precision steps exhausted, forcing drop")
+#                     direction, angle = "f", 0
+#             elif TAG[i] == "return":
+#                 new_data = return_step(drone, i, drone["lidarInfo"])
+#                 if equal(drone["droneVector"]["x"], 0) and equal(drone["droneVector"]["z"], 0):
+#                     print(f"Drone {i}: Reached origin, resetting for recharge")
+#                     IS_RETURNING[i] = False
+#                     DROPPED[i] = False
+#                     TAG[i] = None
+#                     PATHS[i] = []
+#                     RETURN_INDICES[i] = 0
+#                     BYPASS_STATE[i] = {}
+#                     DANGER_COUNT[i] = 0
+#                     PRECISION_STATE[i] = {}
+#                 result.append(new_data)
+#                 continue
+#
+#         # Проверяем попадание в цель
+#         if equal(drone["droneVector"]["x"], targets[i]["x"]) and equal(drone["droneVector"]["z"], targets[i]["z"]) and not DROPPED[i]:
+#             print(f"Drone {i}: Reached target at x={targets[i]['x']:.2f}, z={targets[i]['z']:.2f}, dx={dx:.3f}, dz={dz:.3f}, dropping extinguisher")
+#             new_data = move("f", drone, 0, H, drop=True)
+#             DROPPED[i] = True
+#             fires[i] = 1
+#             TAG[i] = "return"
+#             IS_RETURNING[i] = True
+#             RETURN_INDICES[i] = 0
+#             PRECISION_STATE[i] = {}
+#             result.append(new_data)
+#             continue
+#
+#         # Проверяем безопасность направления
+#         if direction and direction not in safe_directions and TAG[i] != "bypass" and TAG[i] != "return":
+#             direction = avoid_obstacle(drone["lidarInfo"], direction, drone["droneVector"], targets[i], i)
+#             TAG[i] = "bypass"
+#             angle = ANGLE
+#
+#         if direction is None or (direction == "f" and angle == 0):
+#             new_data = move("f", drone, 0, H)
+#         else:
+#             lidar_value = drone["lidarInfo"].get(direction, float('inf'))
+#             if lidar_value != -1 and lidar_value < DANGER_LIDAR_THRESHOLD:
+#                 DANGER_COUNT[i] += 1
+#                 print(f"Drone {i}: Moving in risky direction {direction} (lidar={lidar_value:.2f}), DANGER_COUNT={DANGER_COUNT[i]}")
+#             else:
+#                 DANGER_COUNT[i] = 0
+#             new_data = move(direction, drone, angle, H)
+#             if TAG[i] != "bypass" and TAG[i] != "return":
+#                 PATHS[i].append(direction)
+#             print(f"Drone {i}: Moving {direction}, angle={angle}, lidars={drone['lidarInfo']}, TAG={TAG[i]}, BYPASS={BYPASS_STATE[i]}, DIST={current_distance:.2f}, POS=x={drone['droneVector']['x']:.2f},z={drone['droneVector']['z']:.2f}, TARGET=x={targets[i]['x']:.2f},z={targets[i]['z']:.2f}")
+#
+#         # Проверяем DANGER_COUNT
+#         if DANGER_COUNT[i] >= DANGER_COUNT_THRESHOLD:
+#             print(f"Drone {i}: Too many risky moves (DANGER_COUNT={DANGER_COUNT[i]}), resetting TAG and PATHS")
+#             TAG[i] = None
+#             PATHS[i] = []
+#             BYPASS_STATE[i] = {}
+#             DANGER_COUNT[i] = 0
+#             PRECISION_STATE[i] = {}
+#
+#         result.append(new_data)
+#
+#     connection.send_data(concat_engines(result, T))
+#     time.sleep(T)
+#
+#     return fires
+#
+# def run(targets):
+#     """Запускает миссию"""
+#     print("Using code v11")
+#     i = 0
+#     fires = next_step(targets, i)
+#     while sum(fires) != len(targets):
+#         fires = next_step(targets, i)
+#         i += 1
+#
+# def go_x(drone_position, target_position, lidars, direction):
+#     """Хочу двигаться по Z, но не могу - мешает препятствие"""
+#     desired_direction = get_direction1(drone_position["z"], target_position["z"])
+#     safe_directions, _ = check_lidars(lidars, desired_direction, 0)
+#     if desired_direction in safe_directions:
+#         return desired_direction, None
+#     return direction, "x" + direction
+#
+# def go_z(drone_position, target_position, lidars, direction):
+#     """Хочу двигаться по X, но не могу - мешает препятствие"""
+#     desired_direction = get_direction2(drone_position["x"], target_position["x"])
+#     safe_directions, _ = check_lidars(lidars, desired_direction, 0)
+#     if desired_direction in safe_directions:
+#         return desired_direction, None
+#     return direction, "z" + direction
+#
+# def get_direction1(drone_z, fire_z):
+#     """Направление по оси Z"""
+#     return "f" if drone_z - fire_z > 0 else "b"
+#
+# def get_direction2(drone_x, fire_x):
+#     """Направление по оси X"""
+#     return "r" if drone_x - fire_x > 0 else "l"
+#
+# def get_direction(drone_position, target_position, lidars, i):
+#     """Определяет направление полета дрона и тег"""
+#     global IS_X
+#
+#     if equal(drone_position["x"], target_position["x"]) and equal(drone_position["z"], target_position["z"]):
+#         return None, None
+#
+#     if equal(drone_position["z"], target_position["z"]):
+#         IS_X[i] = True
+#
+#     if not equal(drone_position["x"], target_position["x"]) and IS_X[i]:
+#         desired_direction = get_direction2(drone_position["x"], target_position["x"])
+#         safe_directions, _ = check_lidars(lidars, desired_direction, i)
+#         if desired_direction in safe_directions:
+#             return desired_direction, None
+#         alt_direction = get_direction1(drone_position["z"], target_position["z"])
+#         return alt_direction, "z" + alt_direction
+#
+#     if not equal(drone_position["z"], target_position["z"]):
+#         desired_direction = get_direction1(drone_position["z"], target_position["z"])
+#         safe_directions, _ = check_lidars(lidars, desired_direction, i)
+#         if desired_direction in safe_directions:
+#             return desired_direction, None
+#         alt_direction = get_direction2(drone_position["x"], target_position["x"])
+#         return alt_direction, "x" + alt_direction
+#
+#     return None, None
+
+
+
+
 import time
-from pathlib import Path
+import uuid
+
 from algorithm.PID import move, get_data, equal, concat_engines
 from connection.SocketConnection import SocketConnection
-from services.logger import set_logger_config
-from config import LOG_LEVEL
-
-# Создаём логгер для fly
-logger = logging.getLogger("fly")
-
-# Инициализация логгера
-set_logger_config(LOG_LEVEL)  # Без logger_name
-logger.debug("Fly module logger initialized")
 
 connection = SocketConnection()
-H = 8
-T = 0.1
-ANGLE = 5
-ITER = [0, 300, 600, 900, 1200]
+H = 8  # высота, на которой летит дрон
+T = 0.1  # время, через которое симулятор пришлет новый пакет данных
+ANGLE = 5  # угол наклона дрона
+ITER = [0, 300, 600, 900, 1200]  # задержка для следующих дронов (в итерациях)
 
+# Если tag = None то просто запускаем get_direction()
+# Если tag = "x", то нужно лететь по х, пока не сможем лететь по z
+# Если tag = "z", то нужно лететь по z, пока не сможем лететь по x
+# Если tag = "x" или tag = "z", то добавляется второй символ - направление полета
+# Если tag = "return", то дрон возвращается по сохраненному маршруту
 TAG = [None for _ in range(5)]
+
+# Равняем ли координату X?
 IS_X = [True for _ in range(5)]
-INITIAL_POSITIONS = [None for _ in range(5)]
-RETURNING = [False for _ in range(5)]
-TRAJECTORIES = [[] for _ in range(5)]
-CURRENT_TARGETS = [None for _ in range(5)]
-FIRES_STATUS = []
+
+# Список для хранения маршрутов каждого дрона
+PATHS = [[] for _ in range(5)]
+
+# Статус возвращения дронов
+IS_RETURNING = [False for _ in range(5)]
+
+# Статус активации дронов (взлетели ли они)
+IS_ACTIVE = [False for _ in range(5)]
+
+# Индексы для отслеживания текущей позиции в пути возвращения
+RETURN_INDICES = [0 for _ in range(5)]
+
 
 def check_lidars(directions, lidars):
-    try:
-        logger.debug(f"Checking lidars for directions: {directions}")
-        if 0 < lidars.get(directions[0], float('inf')) < 5:
-            logger.debug(f"Obstacle detected in main direction {directions[0]}: {lidars.get(directions[0])}")
-            return False
-        for direction in directions[1:]:
-            if 0 < lidars.get(direction, float('inf')) < 3:
-                logger.debug(f"Obstacle detected in side direction {direction}: {lidars.get(direction)}")
-                return False
-        logger.debug(f"Path clear for directions {directions}")
-        return True
-    except Exception as e:
-        logger.error(f"Error in check_lidars: {e}")
+    """Проверка лидаров. True - если можно лететь в заданном направлении дальше, False - если рядом преграда"""
+    if 0 < lidars[directions[0]] < 5:
         return False
+    for direction in directions[1:]:
+        if 0 < lidars[direction] < 3:
+            return False
+    return True
+
 
 def get_direction1(drone_z, fire_z):
-    try:
-        direction = "b"
-        if drone_z - fire_z > 0:
-            direction = "f"
-        logger.debug(f"Z direction: {direction} (drone_z={drone_z}, fire_z={fire_z})")
-        return direction, direction + "r", direction + "l"
-    except Exception as e:
-        logger.error(f"Error in get_direction1: {e}")
-        raise
+    """Направление по оси Z. f - forward - вперед, b - backward - назад
+    Возвращается кортеж из 3 элементов: еще добавляются боковые направления"""
+    direction = "b"
+    if drone_z - fire_z > 0:
+        direction = "f"
+    return direction, direction + "r", direction + "l"
+
 
 def get_direction2(drone_x, fire_x):
-    try:
-        direction = "l"
-        if drone_x - fire_x > 0:
-            direction = "r"
-        logger.debug(f"X direction: {direction} (drone_x={drone_x}, fire_x={fire_x})")
-        return direction, "f" + direction, "b" + direction
-    except Exception as e:
-        logger.error(f"Error in get_direction2: {e}")
-        raise
+    """Направление по оси X. r - right - вправо, l - left - влево
+    Возвращается кортеж из 3 элементов: еще добавляются боковые направления"""
+    direction = "l"
+    if drone_x - fire_x > 0:
+        direction = "r"
+    return direction, "f" + direction, "b" + direction
 
-def follow_trajectory(drone_position, trajectory, i):
-    try:
-        if not trajectory:
-            logger.debug(f"Drone {i} trajectory empty, reached initial position")
-            return None, None
-        target_point = trajectory[-1]
-        if equal(drone_position["x"], target_point["x"]) and equal(drone_position["z"], target_point["z"]):
-            logger.debug(f"Drone {i} reached trajectory point {target_point}, removing it")
-            TRAJECTORIES[i].pop()
-            return follow_trajectory(drone_position, trajectory, i)
-        logger.debug(f"Drone {i} moving to trajectory point {target_point}")
-        return get_direction(drone_position, target_point, {}, i)
-    except Exception as e:
-        logger.error(f"Error in follow_trajectory for drone {i}: {e}")
-        raise
 
-def assign_next_target(i, targets):
-    try:
-        logger.debug(f"Assigning next target for drone {i}")
-        global CURRENT_TARGETS, FIRES_STATUS
-        for idx, status in enumerate(FIRES_STATUS):
-            if not status and targets[idx] is not None:
-                CURRENT_TARGETS[i] = targets[idx]
-                logger.info(f"Drone {i} assigned to new target: {CURRENT_TARGETS[i]}")
-                return True
-        CURRENT_TARGETS[i] = None
-        logger.info(f"Drone {i} has no new targets, hovering")
-        return False
-    except Exception as e:
-        logger.error(f"Error in assign_next_target for drone {i}: {e}")
-        raise
+def reverse_direction(direction):
+    """Возвращает противоположное направление для возвращения"""
+    if direction == "f":
+        return "b"
+    if direction == "b":
+        return "f"
+    if direction == "r":
+        return "l"
+    if direction == "l":
+        return "r"
+    return direction
 
-def next_step(targets, iter, initial_positions):
-    try:
-        logger.debug(f"Next step iteration {iter}")
-        global TAG, ITER, IS_X, RETURNING, INITIAL_POSITIONS, TRAJECTORIES, CURRENT_TARGETS, FIRES_STATUS
-        try:
-            data = get_data(connection.receive_data())
-            logger.debug(f"Received data: {data}")
-        except Exception as e:
-            logger.error(f"Connection error: {e}")
-            return [0 for _ in range(len(targets))]
 
-        fires = [0 for _ in range(len(data))]
-        result = []
+def return_step(drone, drone_index, lidars):
+    """Выполняет один шаг возвращения дрона по сохраненному маршруту"""
+    if RETURN_INDICES[drone_index] >= len(PATHS[drone_index]):  # Если маршрут пуст или пройден
+        return move("f", drone, 0, H)  # Остаемся на месте
 
-        if iter == 0:
-            global FIRES_STATUS
-            FIRES_STATUS = [False for _ in range(len(targets))]
-            logger.debug(f"Initialized FIRES_STATUS: {FIRES_STATUS}")
-            for i, drone in enumerate(data):
-                if i < len(INITIAL_POSITIONS):
-                    INITIAL_POSITIONS[i] = {"x": drone["droneVector"]["x"], "z": drone["droneVector"]["z"]}
-                    TRAJECTORIES[i] = [INITIAL_POSITIONS[i]]
-                    logger.info(f"Drone {i} initial position: {INITIAL_POSITIONS[i]}")
-                    if i < len(targets) and targets[i] is not None:
-                        CURRENT_TARGETS[i] = targets[i]
-                        logger.info(f"Drone {i} assigned initial target: {CURRENT_TARGETS[i]}")
-                    else:
-                        CURRENT_TARGETS[i] = None
-                        logger.warning(f"Drone {i} has no initial target")
+    # Берем направление из маршрута, начиная с конца, и инвертируем его
+    path_index = len(PATHS[drone_index]) - 1 - RETURN_INDICES[drone_index]
+    last_direction = PATHS[drone_index][path_index]
+    return_direction = reverse_direction(last_direction)
 
-        for i, drone in enumerate(data):
-            if i >= len(ITER):
-                logger.warning(f"Drone {i} inactive, hovering at height {H}")
-                new_data = move("f", drone, 0, H)
-                result.append(new_data)
+    # Проверяем, можно ли двигаться в обратном направлении
+    directions = [return_direction]
+    if return_direction in ["f", "b"]:
+        directions.extend([return_direction + "r", return_direction + "l"])
+    else:
+        directions.extend(["f" + return_direction, "b" + return_direction])
+
+    if check_lidars(directions, lidars):
+        RETURN_INDICES[drone_index] += 1  # Переходим к следующему шагу возврата
+        return move(return_direction, drone, ANGLE, H)
+
+    # Если нельзя двигаться в обратном направлении, пытаемся обойти препятствие
+    alt_directions = get_direction(drone["droneVector"], {"x": 0, "z": 0}, lidars, drone_index)[0]
+    if alt_directions:
+        PATHS[drone_index].append(alt_directions)  # Добавляем новое направление в путь
+        return move(alt_directions, drone, ANGLE, H)
+
+    return move("f", drone, 0, H)  # Если не можем двигаться, стоим на месте
+
+
+def next_step(targets, iter):
+    """Функция анализирует данные с симулятора и делает один шаг, то есть одну отправку на симулятор
+    :param targets: список точек, к которым летит дрон
+    :param iter: текущая итерация
+    """
+    global TAG, ITER, IS_X, PATHS, IS_RETURNING, IS_ACTIVE, RETURN_INDICES
+
+    data = get_data(connection.receive_data())
+    fires = [0 for _ in range(len(targets))]
+    result = []
+
+    for i, drone in enumerate(data):
+        # Проверяем, достиг ли дрон времени активации
+        if not IS_ACTIVE[i]:
+            if iter < ITER[i]:
+                # Дрон ждет, остается на месте (y=0)
+                result.append(move("f", drone, 0, 0))
+                continue
+            else:
+                IS_ACTIVE[i] = True  # Активируем дрон
+                # Поднимаем дрон на высоту H
+                result.append(move("f", drone, 0, H))
                 continue
 
-            if not RETURNING[i] and CURRENT_TARGETS[i] is not None:
-                current_pos = {"x": drone["droneVector"]["x"], "z": drone["droneVector"]["z"]}
-                if not TRAJECTORIES[i] or not (equal(current_pos["x"], TRAJECTORIES[i][-1]["x"]) and
-                                              equal(current_pos["z"], TRAJECTORIES[i][-1]["z"])):
-                    TRAJECTORIES[i].append(current_pos)
-                    logger.debug(f"Drone {i} added position to trajectory: {current_pos}")
-
-            if RETURNING[i]:
-                logger.debug(f"Drone {i} returning, following trajectory")
-                direction, TAG[i] = follow_trajectory(drone["droneVector"], TRAJECTORIES[i], i)
-            else:
-                if CURRENT_TARGETS[i] is None:
-                    logger.warning(f"Drone {i} has no target, hovering")
-                    new_data = move("f", drone, 0, H)
-                    result.append(new_data)
-                    continue
-                logger.debug(f"Drone {i} moving to target: {CURRENT_TARGETS[i]}")
-                if TAG[i] is None:
-                    direction, TAG[i] = get_direction(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], i)
-                elif "x" in TAG[i]:
-                    direction, TAG[i] = go_x(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], TAG[i][1])
-                    IS_X[i] = False
-                elif "z" in TAG[i]:
-                    direction, TAG[i] = go_z(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], TAG[i][1])
-
-            if ITER[i] > iter:
-                logger.debug(f"Drone {i} waiting for activation (iter={iter}, activation={ITER[i]})")
-                new_data = move("f", drone, 0, 0)
-            elif direction is None:
-                if not RETURNING[i]:
-                    logger.info(f"Drone {i} reached fire, extinguishing and starting return")
-                    new_data = move("f", drone, 0, H, drop=True)
-                    fires[i] = 1
-                    for idx, target in enumerate(targets):
-                        if target == CURRENT_TARGETS[i]:
-                            FIRES_STATUS[idx] = True
-                            logger.info(f"Fire {idx} extinguished")
-                            break
-                    RETURNING[i] = True
-                    TAG[i] = None
-                    IS_X[i] = True
-                else:
-                    logger.info(f"Drone {i} reached initial position, refueling")
-                    new_data = move("f", drone, 0, H)
-                    RETURNING[i] = False
-                    TAG[i] = None
-                    IS_X[i] = True
-                    TRAJECTORIES[i] = [INITIAL_POSITIONS[i]]
-                    if assign_next_target(i, targets):
-                        logger.info(f"Drone {i} refueled and assigned new target: {CURRENT_TARGETS[i]}")
-                    else:
-                        logger.info(f"Drone {i} refueled, no new targets, hovering")
-            else:
-                logger.debug(f"Drone {i} moving in direction {direction}")
-                new_data = move(direction, drone, ANGLE, H)
-
+        if IS_RETURNING[i]:
+            # Если дрон возвращается, используем обратный маршрут
+            new_data = return_step(drone, i, drone["lidarInfo"])
+            # Проверяем, достиг ли дрон начальной точки (x=0, z=0)
+            if equal(drone["droneVector"]["x"], 0) and equal(drone["droneVector"]["z"], 0) and RETURN_INDICES[i] >= len(
+                    PATHS[i]):
+                IS_RETURNING[i] = False  # Завершаем возврат
+                RETURN_INDICES[i] = 0  # Сбрасываем индекс для возможного повторного использования
             result.append(new_data)
+            continue
 
-        try:
-            logger.debug("Sending data to connection")
-            connection.send_data(concat_engines(result, T))
-        except Exception as e:
-            logger.error(f"Failed to send data: {e}")
-        time.sleep(T)
-        logger.debug(f"Completed next_step iteration {iter}")
-        return fires
-    except Exception as e:
-        logger.error(f"Error in next_step: {e}")
-        raise
+        if TAG[i] is None:
+            direction, TAG[i] = get_direction(drone["droneVector"], targets[i], drone["lidarInfo"], i)
+        elif "x" in TAG[i]:
+            direction, TAG[i] = go_x(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
+            IS_X[i] = False
+        elif "z" in TAG[i]:
+            direction, TAG[i] = go_z(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
+
+        if direction is None:
+            new_data = move("f", drone, 0, H, drop=True)
+            fires[i] = 1
+            IS_RETURNING[i] = True  # Начинаем возврат после тушения
+            TAG[i] = "return"
+            RETURN_INDICES[i] = 0  # Инициализируем индекс возврата
+        else:
+            new_data = move(direction, drone, ANGLE, H)
+            PATHS[i].append(direction)  # Сохраняем направление в маршрут
+
+        result.append(new_data)
+
+    connection.send_data(concat_engines(result, T))
+    time.sleep(T)
+
+    return fires
+
 
 def run(targets):
-    try:
-        logger.debug("Starting drone control run")
-        global TRAJECTORIES, FIRES_STATUS
-        logger.info(f"Starting run with targets: {targets}")
-        i = 0
-        fires = next_step(targets, i, INITIAL_POSITIONS)
-        while not all(FIRES_STATUS) or not all_at_initial_positions():
-            fires = next_step(targets, i, INITIAL_POSITIONS)
-            i += 1
-        logger.info(f"Run completed. All fires extinguished. Final trajectories: {TRAJECTORIES}")
-    except Exception as e:
-        logger.error(f"Error in run: {e}")
-        raise
+    """Запускает миссию и возвращает дроны в исходную точку"""
+    i = 0
+    fires = next_step(targets, i)
+    while any(IS_RETURNING) or sum(fires) != len(targets):
+        fires = next_step(targets, i)
+        i += 1
 
-def all_at_initial_positions():
-    try:
-        logger.debug("Checking if all drones are at initial positions")
-        global INITIAL_POSITIONS, RETURNING, CURRENT_TARGETS
-        try:
-            data = get_data(connection.receive_data())
-            logger.debug(f"Received data for position check: {data}")
-        except Exception as e:
-            logger.error(f"Connection error in all_at_initial_positions: {e}")
-            return False
-
-        for i, drone in enumerate(data):
-            if i >= len(INITIAL_POSITIONS):
-                continue
-            if RETURNING[i] or CURRENT_TARGETS[i] is None:
-                initial = INITIAL_POSITIONS[i]
-                current = drone["droneVector"]
-                if not (equal(current["x"], initial["x"]) and equal(current["z"], initial["z"])):
-                    logger.debug(f"Drone {i} not at initial position: current={current}, initial={initial}")
-                    return False
-                else:
-                    logger.debug(f"Drone {i} at initial position: {current}")
-        return True
-    except Exception as e:
-        logger.error(f"Error in all_at_initial_positions: {e}")
-        raise
 
 def go_x(drone_position, target_position, lidars, direction):
-    try:
-        directions1 = get_direction1(drone_position["z"], target_position["z"])
-        if check_lidars(directions1, lidars):
-            logger.debug(f"Switching to Z direction: {directions1[0]}")
-            return directions1[0], None
-        logger.debug(f"Continuing in X direction: {direction}")
-        return direction, "x" + direction
-    except Exception as e:
-        logger.error(f"Error in go_x: {e}")
-        raise
+    """Хочу двигаться по Z, но не могу - мешает препятствие.
+    Значит нужно лететь по X пока не смогу лететь по Z"""
+    directions1 = get_direction1(drone_position["z"], target_position["z"])
+    if check_lidars(directions1, lidars):
+        return directions1[0], None
+    return direction, "x" + direction
+
 
 def go_z(drone_position, target_position, lidars, direction):
-    try:
-        directions2 = get_direction2(drone_position["x"], target_position["x"])
-        if check_lidars(directions2, lidars):
-            logger.debug(f"Switching to X direction: {directions2[0]}")
-            return directions2[0], None
-        logger.debug(f"Continuing in Z direction: {direction}")
-        return direction, "z" + direction
-    except Exception as e:
-        logger.error(f"Error in go_z: {e}")
-        raise
+    """Хочу двигаться по X, но не могу - мешает препятствие.
+    Значит нужно лететь по Z пока не смогу лететь по X"""
+    directions2 = get_direction2(drone_position["x"], target_position["x"])
+    if check_lidars(directions2, lidars):
+        return directions2[0], None
+    return direction, "z" + direction
+
 
 def get_direction(drone_position, target_position, lidars, i):
-    try:
-        global IS_X
-        if target_position is None:
-            logger.warning(f"Drone {i} has no target, hovering")
-            return None, None
-        if equal(drone_position["z"], target_position["z"]):
-            IS_X[i] = True
-            logger.debug(f"Drone {i} aligned on Z, enabling X alignment")
-        if not equal(drone_position["x"], target_position["x"]) and IS_X[i]:
-            directions2 = get_direction2(drone_position["x"], target_position["x"])
-            if not lidars or check_lidars(directions2, lidars):
-                logger.debug(f"Drone {i} moving in X direction: {directions2[0]}")
-                return directions2[0], None
-            directions1 = get_direction1(drone_position["z"], target_position["z"])
-            logger.debug(f"Drone {i} obstructed in X, moving in Z: {directions1[0]}")
-            return directions1[0], "z" + directions1[0]
-        if not equal(drone_position["z"], target_position["z"]):
-            directions1 = get_direction1(drone_position["z"], target_position["z"])
-            if not lidars or check_lidars(directions1, lidars):
-                logger.debug(f"Drone {i} moving in Z direction: {directions1[0]}")
-                return directions1[0], None
-            directions2 = get_direction2(drone_position["x"], target_position["x"])
-            logger.debug(f"Drone {i} obstructed in Z, moving in X: {directions2[0]}")
-            return directions2[0], "x" + directions2[0]
-        logger.debug(f"Drone {i} reached target: {target_position}")
-        return None, None
-    except Exception as e:
-        logger.error(f"Error in get_direction for drone {i}: {e}")
-        raise
+    """Функция определяет дальнейшее направление полета дрона и тег"""
+    global IS_X
+
+    if equal(drone_position["z"], target_position["z"]):
+        IS_X[i] = True
+
+    if not equal(drone_position["x"], target_position["x"]) and IS_X[i]:
+        directions2 = get_direction2(drone_position["x"], target_position["x"])
+        if check_lidars(directions2, lidars):
+            return directions2[0], None
+        directions1 = get_direction1(drone_position["z"], target_position["z"])
+        return directions1[0], "z" + directions1[0]
+
+    if not equal(drone_position["z"], target_position["z"]):
+        directions1 = get_direction1(drone_position["z"], target_position["z"])
+        if check_lidars(directions1, lidars):
+            return directions1[0], None
+        directions2 = get_direction2(drone_position["x"], target_position["x"])
+        return directions2[0], "x" + directions2[0]
+
+    return None, None
 
 
 
-# import logging
+
+
 # import time
-# from pathlib import Path
+#
 # from algorithm.PID import move, get_data, equal, concat_engines
 # from connection.SocketConnection import SocketConnection
-#
-# # Предполагаем, что LOG_DIR определен
-# LOG_DIR = "logs/"
-#
-# def set_logger_config(log_level="INFO"):
-#     """Настройка логирования с перезаписью файла"""
-#     Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
-#
-#     level = logging.INFO
-#     filename = "info.log"
-#
-#     if log_level == "DEBUG":
-#         level = logging.DEBUG
-#         filename = "debug.log"
-#
-#     logging.basicConfig(
-#         level=level,
-#         format="%(asctime)s %(levelname)s %(message)s",
-#         datefmt="%Y-%m-%d %H:%M:%S",
-#         filename=str(Path(LOG_DIR) / filename),
-#         filemode="w"
-#     )
-#
-# # Инициализация логгера
-# set_logger_config("DEBUG")
 #
 # connection = SocketConnection()
 # H = 8  # высота, на которой летит дрон
@@ -340,248 +634,128 @@ def get_direction(drone_position, target_position, lidars, i):
 # ANGLE = 5  # угол наклона дрона
 # ITER = [0, 300, 600, 900, 1200]  # задержка для следующих дронов
 #
-# # Списки для состояния дронов (максимум 5 дронов)
+# # Если tag = None то просто запускаем get_direction()
+# # Если tag = "x", то нужно лететь по х, пока не сможем лететь по z
+# # Если tag = "z", то нужно лететь по z, пока не сможем лететь по x
+# # Если tag = "x" или tag = "z", то добавляется второй символ - направление полета
 # TAG = [None for _ in range(5)]
+#
+# # Равняем ли координату X?
 # IS_X = [True for _ in range(5)]
-# INITIAL_POSITIONS = [None for _ in range(5)]
-# RETURNING = [False for _ in range(5)]
-# TRAJECTORIES = [[] for _ in range(5)]  # Список траекторий для каждого дрона
-# CURRENT_TARGETS = [None for _ in range(5)]  # Текущие цели для каждого дрона
-# FIRES_STATUS = []  # Статус очагов: True - потушен, False - активен
+#
 #
 # def check_lidars(directions, lidars):
-#     """Проверка лидаров. True - если можно лететь, False - если рядом преграда"""
-#     if 0 < lidars.get(directions[0], float('inf')) < 5:
-#         logging.debug(f"Obstacle detected in main direction {directions[0]}: {lidars.get(directions[0])}")
+#     """Проверка лидаров. True - если можно лететь в заданном направлении дальне, False - если рядом преграда"""
+#     if 0 < lidars[directions[0]] < 5:
 #         return False
 #     for direction in directions[1:]:
-#         if 0 < lidars.get(direction, float('inf')) < 3:
-#             logging.debug(f"Obstacle detected in side direction {direction}: {lidars.get(direction)}")
+#         if 0 < lidars[direction] < 3:
 #             return False
-#     logging.debug(f"Path clear for directions {directions}")
 #     return True
 #
+#
 # def get_direction1(drone_z, fire_z):
-#     """Направление по оси Z: f - вперед, b - назад"""
+#     """Направление по оси Z. f - forward - вперед, b - backward - назад
+#     Возвращается кортеж из 3 элементов: еще добавляются боковые направления"""
 #     direction = "b"
 #     if drone_z - fire_z > 0:
-#         direction = "f"
-#     logging.debug(f"Z direction: {direction} (drone_z={drone_z}, fire_z={fire_z})")
+#         return "f"
 #     return direction, direction + "r", direction + "l"
 #
+#
 # def get_direction2(drone_x, fire_x):
-#     """Направление по оси X: r - вправо, l - влево"""
+#     """Направление по оси X. r - right - вправо, l - left - влево
+#     Возвращается кортеж из 3 элементов: еще добавляются боковые направления"""
 #     direction = "l"
 #     if drone_x - fire_x > 0:
-#         direction = "r"
-#     logging.debug(f"X direction: {direction} (drone_x={drone_x}, fire_x={fire_x})")
+#         return "r"
 #     return direction, "f" + direction, "b" + direction
 #
-# def follow_trajectory(drone_position, trajectory, i):
-#     """Следование по сохраненной траектории в обратном порядке"""
-#     if not trajectory:
-#         logging.debug(f"Drone {i} trajectory empty, reached initial position")
-#         return None, None
-#     target_point = trajectory[-1]
-#     if equal(drone_position["x"], target_point["x"]) and equal(drone_position["z"], target_point["z"]):
-#         logging.debug(f"Drone {i} reached trajectory point {target_point}, removing it")
-#         TRAJECTORIES[i].pop()
-#         return follow_trajectory(drone_position, trajectory, i)
-#     logging.debug(f"Drone {i} moving to trajectory point {target_point}")
-#     return get_direction(drone_position, target_point, {}, i)
 #
-# def assign_next_target(i):
-#     """Назначает дрона на следующий непотушенный очаг"""
-#     global CURRENT_TARGETS, FIRES_STATUS
-#     for idx, status in enumerate(FIRES_STATUS):
-#         if not status:  # Очаг не потушен
-#             CURRENT_TARGETS[i] = targets[idx]
-#             logging.info(f"Drone {i} assigned to new target: {CURRENT_TARGETS[i]}")
-#             return True
-#     CURRENT_TARGETS[i] = None
-#     logging.info(f"Drone {i} has no new targets, hovering")
-#     return False
+# def next_step(targets, iter):
+#     """Функция анализирует данны с симулятора и делает один шаг, то есть одну отправку на симулятор
+#     :param targets: список точек, к которым летит дрон
+#     :param iter: текущая итерация
+#     """
+#     global TAG, ITER, IS_X
 #
-# def next_step(targets, iter, initial_positions):
-#     """Один шаг управления дронами"""
-#     global TAG, ITER, IS_X, RETURNING, INITIAL_POSITIONS, TRAJECTORIES, CURRENT_TARGETS, FIRES_STATUS
-#     try:
-#         data = get_data(connection.receive_data())
-#     except Exception as e:
-#         logging.error(f"Connection error: {e}")
-#         return [0 for _ in range(len(targets))]
-#
-#     fires = [0 for _ in range(len(data))]
+#     data = get_data(connection.receive_data())
+#     fires = [0 for _ in range(len(targets))]
 #     result = []
 #
-#     # Инициализация на первой итерации
-#     if iter == 0:
-#         global FIRES_STATUS
-#         FIRES_STATUS = [False for _ in range(len(targets))]  # Инициализируем статус очагов
-#         for i, drone in enumerate(data):
-#             if i < len(INITIAL_POSITIONS):
-#                 INITIAL_POSITIONS[i] = {"x": drone["droneVector"]["x"], "z": drone["droneVector"]["z"]}
-#                 TRAJECTORIES[i] = [INITIAL_POSITIONS[i]]
-#                 logging.info(f"Drone {i} initial position: {INITIAL_POSITIONS[i]}")
-#                 # Назначаем начальные цели
-#                 if i < len(targets) and targets[i] is not None:
-#                     CURRENT_TARGETS[i] = targets[i]
-#                     logging.info(f"Drone {i} assigned initial target: {CURRENT_TARGETS[i]}")
-#                 else:
-#                     CURRENT_TARGETS[i] = None
-#                     logging.warning(f"Drone {i} has no initial target")
-#
 #     for i, drone in enumerate(data):
-#         if i >= len(ITER):
-#             logging.warning(f"Drone {i} inactive, hovering at height {H}")
-#             new_data = move("f", drone, 0, H)
-#             result.append(new_data)
-#             continue
-#
-#         # Записываем текущую позицию в траекторию, если дрон не возвращается
-#         if not RETURNING[i] and CURRENT_TARGETS[i] is not None:
-#             current_pos = {"x": drone["droneVector"]["x"], "z": drone["droneVector"]["z"]}
-#             if not TRAJECTORIES[i] or not (equal(current_pos["x"], TRAJECTORIES[i][-1]["x"]) and
-#                                           equal(current_pos["z"], TRAJECTORIES[i][-1]["z"])):
-#                 TRAJECTORIES[i].append(current_pos)
-#                 logging.debug(f"Drone {i} added position to trajectory: {current_pos}")
-#
-#         # Определяем текущую цель
-#         if RETURNING[i]:
-#             logging.debug(f"Drone {i} returning, following trajectory")
-#             direction, TAG[i] = follow_trajectory(drone["droneVector"], TRAJECTORIES[i], i)
-#         else:
-#             if CURRENT_TARGETS[i] is None:
-#                 logging.warning(f"Drone {i} has no target, hovering")
-#                 new_data = move("f", drone, 0, H)
-#                 result.append(new_data)
-#                 continue
-#             logging.debug(f"Drone {i} moving to target: {CURRENT_TARGETS[i]}")
-#             if TAG[i] is None:
-#                 direction, TAG[i] = get_direction(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], i)
-#             elif "x" in TAG[i]:
-#                 direction, TAG[i] = go_x(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], TAG[i][1])
-#                 IS_X[i] = False
-#             elif "z" in TAG[i]:
-#                 direction, TAG[i] = go_z(drone["droneVector"], CURRENT_TARGETS[i], drone["lidarInfo"], TAG[i][1])
+#         if TAG[i] is None:
+#             direction, TAG[i] = get_direction(drone["droneVector"], targets[i], drone["lidarInfo"], i)
+#         elif "x" in TAG[i]:
+#             direction, TAG[i] = go_x(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
+#             IS_X[i] = False
+#         elif "z" in TAG[i]:
+#             direction, TAG[i] = go_z(drone["droneVector"], targets[i], drone["lidarInfo"], TAG[i][1])
 #
 #         if ITER[i] > iter:
-#             logging.debug(f"Drone {i} waiting for activation (iter={iter}, activation={ITER[i]})")
 #             new_data = move("f", drone, 0, 0)
 #         elif direction is None:
-#             if not RETURNING[i]:
-#                 # Дрон достиг очага
-#                 logging.info(f"Drone {i} reached fire, extinguishing and starting return")
-#                 new_data = move("f", drone, 0, H, drop=True)
-#                 fires[i] = 1
-#                 # Отмечаем очаг как потушенный
-#                 for idx, target in enumerate(targets):
-#                     if target == CURRENT_TARGETS[i]:
-#                         FIRES_STATUS[idx] = True
-#                         logging.info(f"Fire {idx} extinguished")
-#                         break
-#                 RETURNING[i] = True
-#                 TAG[i] = None
-#                 IS_X[i] = True
-#             else:
-#                 # Дрон достиг исходной позиции
-#                 logging.info(f"Drone {i} reached initial position, refueling")
-#                 new_data = move("f", drone, 0, H)
-#                 # Заправка и назначение нового очага
-#                 RETURNING[i] = False
-#                 TAG[i] = None
-#                 IS_X[i] = True
-#                 TRAJECTORIES[i] = [INITIAL_POSITIONS[i]]  # Сбрасываем траекторию
-#                 if assign_next_target(i):
-#                     logging.info(f"Drone {i} refueled and assigned new target: {CURRENT_TARGETS[i]}")
-#                 else:
-#                     logging.info(f"Drone {i} refueled, no new targets, hovering")
+#             new_data = move("f", drone, 0, H, drop=True)
+#             fires[i] = 1
 #         else:
-#             logging.debug(f"Drone {i} moving in direction {direction}")
 #             new_data = move(direction, drone, ANGLE, H)
 #
 #         result.append(new_data)
 #
-#     try:
-#         connection.send_data(concat_engines(result, T))
-#     except Exception as e:
-#         logging.error(f"Failed to send data: {e}")
+#     connection.send_data(concat_engines(result, T))
 #     time.sleep(T)
+#
 #     return fires
 #
+#
 # def run(targets):
-#     """Основной цикл управления дронами"""
-#     global TRAJECTORIES, FIRES_STATUS
-#     logging.info(f"Starting run with targets: {targets}")
 #     i = 0
-#     fires = next_step(targets, i, INITIAL_POSITIONS)
-#     # Продолжаем, пока не потушены все очаги или дроны не вернулись
-#     while not all(FIRES_STATUS) or not all_at_initial_positions():
-#         fires = next_step(targets, i, INITIAL_POSITIONS)
+#     fires = next_step(targets, i)
+#     while sum(fires) != len(targets):
+#         fires = next_step(targets, i)
 #         i += 1
-#     logging.info(f"Run completed. All fires extinguished. Final trajectories: {TRAJECTORIES}")
 #
-# def all_at_initial_positions():
-#     """Проверяет, вернулись ли все дроны в исходные позиции, если нет активных целей"""
-#     global INITIAL_POSITIONS, RETURNING, CURRENT_TARGETS
-#     try:
-#         data = get_data(connection.receive_data())
-#     except Exception as e:
-#         logging.error(f"Connection error in all_at_initial_positions: {e}")
-#         return False
-#
-#     for i, drone in enumerate(data):
-#         if i >= len(INITIAL_POSITIONS):
-#             continue
-#         if RETURNING[i] or CURRENT_TARGETS[i] is None:
-#             initial = INITIAL_POSITIONS[i]
-#             current = drone["droneVector"]
-#             if not (equal(current["x"], initial["x"]) and equal(current["z"], initial["z"])):
-#                 logging.debug(f"Drone {i} not at initial position: current={current}, initial={initial}")
-#                 return False
-#             else:
-#                 logging.debug(f"Drone {i} at initial position: {current}")
-#     return True
 #
 # def go_x(drone_position, target_position, lidars, direction):
+#     """Хочу двигаться по Z, но не могу - мешает препятствие.
+#     Значит нужно лететь по X пока не смогу лететь по Z"""
+#
 #     directions1 = get_direction1(drone_position["z"], target_position["z"])
 #     if check_lidars(directions1, lidars):
-#         logging.debug(f"Switching to Z direction: {directions1[0]}")
 #         return directions1[0], None
-#     logging.debug(f"Continuing in X direction: {direction}")
+#
 #     return direction, "x" + direction
 #
+#
 # def go_z(drone_position, target_position, lidars, direction):
+#     """Хочу двигаться по X, но не могу - мешает препятствие.
+#     Значит нужно лететь по Z пока не смогу лететь по X"""
+#
 #     directions2 = get_direction2(drone_position["x"], target_position["x"])
 #     if check_lidars(directions2, lidars):
-#         logging.debug(f"Switching to X direction: {directions2[0]}")
 #         return directions2[0], None
-#     logging.debug(f"Continuing in Z direction: {direction}")
 #     return direction, "z" + direction
 #
+#
 # def get_direction(drone_position, target_position, lidars, i):
+#     """Функция определяет дальнейшее направления полета дрона и тег"""
 #     global IS_X
-#     if target_position is None:
-#         logging.warning(f"Drone {i} has no target, hovering")
-#         return None, None
+#
 #     if equal(drone_position["z"], target_position["z"]):
 #         IS_X[i] = True
-#         logging.debug(f"Drone {i} aligned on Z, enabling X alignment")
+#
 #     if not equal(drone_position["x"], target_position["x"]) and IS_X[i]:
 #         directions2 = get_direction2(drone_position["x"], target_position["x"])
-#         if not lidars or check_lidars(directions2, lidars):
-#             logging.debug(f"Drone {i} moving in X direction: {directions2[0]}")
+#         if check_lidars(directions2, lidars):
 #             return directions2[0], None
 #         directions1 = get_direction1(drone_position["z"], target_position["z"])
-#         logging.debug(f"Drone {i} obstructed in X, moving in Z: {directions1[0]}")
 #         return directions1[0], "z" + directions1[0]
+#
 #     if not equal(drone_position["z"], target_position["z"]):
 #         directions1 = get_direction1(drone_position["z"], target_position["z"])
-#         if not lidars or check_lidars(directions1, lidars):
-#             logging.debug(f"Drone {i} moving in Z direction: {directions1[0]}")
+#         if check_lidars(directions1, lidars):
 #             return directions1[0], None
 #         directions2 = get_direction2(drone_position["x"], target_position["x"])
-#         logging.debug(f"Drone {i} obstructed in Z, moving in X: {directions2[0]}")
 #         return directions2[0], "x" + directions2[0]
-#     logging.debug(f"Drone {i} reached target: {target_position}")
+#
 #     return None, None
